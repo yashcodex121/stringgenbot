@@ -16,7 +16,7 @@ CHANNEL = os.getenv("CHANNEL")
 OWNER_ID = int(os.getenv("OWNER_ID"))
 MONGO_URL = os.getenv("MONGO_URL")
 
-# ---------------- BOT INIT ---------------- #
+# ---------------- BOT ---------------- #
 
 bot = Client(
     "string_bot",
@@ -27,13 +27,16 @@ bot = Client(
 
 # ---------------- MONGO SAFE INIT ---------------- #
 
+users_db = None
+
 try:
     mongo = AsyncIOMotorClient(MONGO_URL)
     db = mongo["bot"]
     users_db = db["users"]
 except Exception as e:
     print("❌ MongoDB Error:", e)
-    users_db = None
+
+# ---------------- USER STORAGE ---------------- #
 
 users = {}
 
@@ -51,12 +54,16 @@ async def is_joined(client, user_id):
 @bot.on_message(filters.command("start"))
 async def start(client, message):
 
-    if users_db:
-        await users_db.update_one(
-            {"user_id": message.from_user.id},
-            {"$set": {"user_id": message.from_user.id}},
-            upsert=True
-        )
+    # ❌ FIX: NO if users_db directly
+    if users_db is not None:
+        try:
+            await users_db.update_one(
+                {"user_id": message.from_user.id},
+                {"$set": {"user_id": message.from_user.id}},
+                upsert=True
+            )
+        except Exception as e:
+            print("DB error:", e)
 
     if not await is_joined(client, message.from_user.id):
         return await message.reply(
@@ -90,7 +97,7 @@ async def verify(client, cb):
     else:
         await cb.answer("❌ Join nahi kiya!", show_alert=True)
 
-# ---------------- SELECT TYPE ---------------- #
+# ---------------- SELECT ---------------- #
 
 @bot.on_callback_query(filters.regex("pyro|tele"))
 async def choose(client, cb):
@@ -116,24 +123,20 @@ async def handler(client, message):
     if not user:
         return
 
-    # timeout
     if time.time() - user["time"] > 120:
         users.pop(message.from_user.id)
         return await message.reply("⌛ Session expired")
 
     try:
 
-        # API_ID
         if "api_id" not in user:
             user["api_id"] = int(message.text)
             return await message.reply("Send API_HASH")
 
-        # API_HASH
         elif "api_hash" not in user:
             user["api_hash"] = message.text
             return await message.reply("Send Phone (+91...)")
 
-        # PHONE
         elif "phone" not in user:
             user["phone"] = message.text
 
@@ -152,7 +155,6 @@ async def handler(client, message):
 
             return await message.reply("📩 OTP bhejo")
 
-        # OTP
         elif "otp" not in user:
 
             string = ""
@@ -187,7 +189,7 @@ async def handler(client, message):
 
     users.pop(message.from_user.id, None)
 
-# ---------------- RUN (IMPORTANT FIX) ---------------- #
+# ---------------- RUN ---------------- #
 
 if __name__ == "__main__":
     print("🚀 Bot Started...")
