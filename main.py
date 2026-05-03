@@ -1,5 +1,6 @@
 import os
 import asyncio
+import time
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from telethon.sessions import StringSession
@@ -15,11 +16,24 @@ CHANNEL = os.getenv("CHANNEL")
 OWNER_ID = int(os.getenv("OWNER_ID"))
 MONGO_URL = os.getenv("MONGO_URL")
 
-bot = Client("string_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+# ---------------- BOT INIT ---------------- #
 
-mongo = AsyncIOMotorClient(MONGO_URL)
-db = mongo["bot"]
-users_db = db["users"]
+bot = Client(
+    "string_bot",
+    api_id=API_ID,
+    api_hash=API_HASH,
+    bot_token=BOT_TOKEN
+)
+
+# ---------------- MONGO SAFE INIT ---------------- #
+
+try:
+    mongo = AsyncIOMotorClient(MONGO_URL)
+    db = mongo["bot"]
+    users_db = db["users"]
+except Exception as e:
+    print("❌ MongoDB Error:", e)
+    users_db = None
 
 users = {}
 
@@ -36,11 +50,13 @@ async def is_joined(client, user_id):
 
 @bot.on_message(filters.command("start"))
 async def start(client, message):
-    await users_db.update_one(
-        {"user_id": message.from_user.id},
-        {"$set": {"user_id": message.from_user.id}},
-        upsert=True
-    )
+
+    if users_db:
+        await users_db.update_one(
+            {"user_id": message.from_user.id},
+            {"$set": {"user_id": message.from_user.id}},
+            upsert=True
+        )
 
     if not await is_joined(client, message.from_user.id):
         return await message.reply(
@@ -74,13 +90,13 @@ async def verify(client, cb):
     else:
         await cb.answer("❌ Join nahi kiya!", show_alert=True)
 
-# ---------------- SELECT ---------------- #
+# ---------------- SELECT TYPE ---------------- #
 
 @bot.on_callback_query(filters.regex("pyro|tele"))
 async def choose(client, cb):
     users[cb.from_user.id] = {
         "type": cb.data,
-        "time": asyncio.get_event_loop().time()
+        "time": time.time()
     }
     await cb.message.edit("📥 Send API_ID\n\n/cancel to stop")
 
@@ -91,35 +107,33 @@ async def cancel(client, message):
     users.pop(message.from_user.id, None)
     await message.reply("❌ Cancelled")
 
-# ---------------- ADMIN ---------------- #
-
-@bot.on_message(filters.command("stats") & filters.user(OWNER_ID))
-async def stats(client, message):
-    total = await users_db.count_documents({})
-    await message.reply(f"📊 Total Users: {total}")
-
 # ---------------- HANDLER ---------------- #
 
 @bot.on_message(filters.private & filters.text)
 async def handler(client, message):
+
     user = users.get(message.from_user.id)
     if not user:
         return
 
     # timeout
-    if asyncio.get_event_loop().time() - user["time"] > 120:
+    if time.time() - user["time"] > 120:
         users.pop(message.from_user.id)
         return await message.reply("⌛ Session expired")
 
     try:
+
+        # API_ID
         if "api_id" not in user:
             user["api_id"] = int(message.text)
             return await message.reply("Send API_HASH")
 
+        # API_HASH
         elif "api_hash" not in user:
             user["api_hash"] = message.text
             return await message.reply("Send Phone (+91...)")
 
+        # PHONE
         elif "phone" not in user:
             user["phone"] = message.text
 
@@ -129,6 +143,7 @@ async def handler(client, message):
                 code = await app.send_code(user["phone"])
                 user["app"] = app
                 user["hash"] = code.phone_code_hash
+
             else:
                 client_t = TelegramClient(StringSession(), user["api_id"], user["api_hash"])
                 await client_t.connect()
@@ -137,26 +152,31 @@ async def handler(client, message):
 
             return await message.reply("📩 OTP bhejo")
 
+        # OTP
         elif "otp" not in user:
+
+            string = ""
+
             if user["type"] == "pyro":
                 await user["app"].sign_in(user["phone"], user["hash"], message.text)
                 string = await user["app"].export_session_string()
+                await user["app"].disconnect()
+
             else:
                 await user["client"].sign_in(user["phone"], message.text)
                 string = user["client"].session.save()
+                await user["client"].disconnect()
 
-            # save file
             file_name = f"{message.from_user.id}.txt"
+
             with open(file_name, "w") as f:
                 f.write(string)
 
             msg = await message.reply_document(file_name)
 
-            # auto delete
             await asyncio.sleep(60)
             await msg.delete()
 
-            # log
             await bot.send_message(
                 OWNER_ID,
                 f"🆕 New Session\nUser: {message.from_user.id}\nType: {user['type']}"
@@ -167,7 +187,8 @@ async def handler(client, message):
 
     users.pop(message.from_user.id, None)
 
-# ---------------- RUN ---------------- #
+# ---------------- RUN (IMPORTANT FIX) ---------------- #
 
-print("🚀 Bot Started...")
-bot.run()
+if __name__ == "__main__":
+    print("🚀 Bot Started...")
+    bot.run()
