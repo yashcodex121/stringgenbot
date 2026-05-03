@@ -1,74 +1,72 @@
-# stringgenbot 
-<h1 align="center">🔥 String Generator Bot</h1>
-
-<p align="center">
-  <b>Generate Pyrogram & Telethon String Sessions in seconds ⚡</b>
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/Python-3.10-blue?style=flat-square&logo=python">
-  <img src="https://img.shields.io/badge/Telegram-Bot-2CA5E0?style=flat-square&logo=telegram">
-  <img src="https://img.shields.io/badge/Status-Active-success?style=flat-square">
-  <img src="https://img.shields.io/github/stars/yourusername/string-generator-bot?style=flat-square">
-</p>
-
 ---
 
-## ⚡ Features
+## 🚀 Features
 
 * 🔐 Secure String Generation
 * 🎯 Pyrogram + Telethon Support
-* ✅ Force Join + Verify
+* 📢 Force Join + Verify System
 * 🎛 Inline Button UI
-* ⏳ Auto Delete System
-* 🗄 MongoDB Database
+* ⏳ Auto Delete Session
+* 🗄 MongoDB Support
+* ⚡ Fast & Lightweight
 
 ---
 
-## 🚀 Quick Start
+## ☁️ Deploy on Heroku
 
-```bash id="d0h1t2"
-git clone https://github.com/yourusername/string-generator-bot
-cd string-generator-bot
+---
+
+## ⚙️ Installation (Local)
+
+```bash
+git clone https://github.com/yashcodex121/stringgenbot
+cd stringgenbot
 pip install -r requirements.txt
 python main.py
 ```
 
 ---
 
-## ⚙️ Environment
+## 🔐 Environment Variables
 
-```env id="h3k9zq"
-API_ID=
-API_HASH=
-BOT_TOKEN=
-CHANNEL=
-OWNER_ID=
-MONGO_URL=
+```env
+API_ID=your_api_id
+API_HASH=your_api_hash
+BOT_TOKEN=your_bot_token
+CHANNEL=your_channel_username
+OWNER_ID=your_telegram_id
+MONGO_URL=your_mongodb_url
 ```
 
 ---
 
-## ☁️ Deploy on Heroku
+## 🔑 Get Required Values
 
-Connect repo → Add config vars → Start worker 🚀
+* API_ID & API_HASH → my.telegram.org
+* BOT TOKEN → BotFather
+* Database → MongoDB Atlas
 
 ---
 
-## 🔑 Get Credentials
+## 📦 Files Required
 
-* API → my.telegram.org
-* Bot → BotFather
-* DB → MongoDB Atlas
+* main.py
+* requirements.txt
+* Procfile
+* runtime.txt
+* app.json
 
 ---
 
 ## ⚠️ Disclaimer
 
-For educational use only. Don’t misuse.
+This bot is made for **educational purposes only**.
+Misuse of this tool is strictly not recommended.
 
 ---
 
-<p align="center">
-  ⭐ Star • 🍴 Fork • 🚀 Deploy
-</p>
+## 👑 Owner 
+
+* Telegram: @Brucerich12
+
+---
