@@ -1,5 +1,4 @@
 import os
-import asyncio
 import time
 from pyrogram import Client, filters
 from pyrogram.errors import SessionPasswordNeeded
@@ -16,8 +15,8 @@ from help import HELP_TEXT, help_buttons
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL = "hellupdates1"   # already added
-OWNER_ID = int(os.getenv("OWNER_ID"))  # numeric id dalna
+CHANNEL = "hellupdates1"
+OWNER_ID = int(os.getenv("OWNER_ID"))
 LOGGER_ID = int(os.getenv("LOGGER_ID"))
 MONGO_URL = os.getenv("MONGO_URL")
 
@@ -29,10 +28,18 @@ users_db = None
 try:
     mongo = AsyncIOMotorClient(MONGO_URL)
     users_db = mongo["bot"]["users"]
-except:
-    pass
+except Exception as e:
+    print("Mongo Error:", e)
 
 users = {}
+
+# ---------------- LOGGER ---------------- #
+
+async def send_log(text):
+    try:
+        await bot.send_message(LOGGER_ID, text)
+    except Exception as e:
+        print("Logger Error:", e)
 
 # ---------------- FORCE JOIN ---------------- #
 
@@ -96,104 +103,150 @@ async def choose(client, cb):
 
 @bot.on_message(filters.command("broadcast") & filters.user(OWNER_ID))
 async def broadcast(client, message):
+    if len(message.command) < 2:
+        return await message.reply("❌ Give message to broadcast")
+
+    if users_db is None:
+        return await message.reply("❌ Database not connected")
+
     msg = message.text.split(None, 1)[1]
+    success = 0
+    failed = 0
 
     async for user in users_db.find():
         try:
             await bot.send_message(user["user_id"], msg)
+            success += 1
         except:
-            pass
+            failed += 1
 
-    await message.reply("✅ Broadcast Done")
+    await message.reply(f"✅ Done\nSuccess: {success}\nFailed: {failed}")
 
 # ---------------- HANDLER ---------------- #
 
 @bot.on_message(filters.private & filters.text)
 async def handler(client, message):
 
-    user = users.get(message.from_user.id)
-    if not user:
+    user_data = users.get(message.from_user.id)
+    if not user_data:
         return
 
-    if time.time() - user["time"] > 120:
+    if time.time() - user_data["time"] > 180:
         users.pop(message.from_user.id)
-        return await message.reply("⌛ Timeout")
+        return await message.reply("⌛ Session Timeout")
 
     try:
 
-        if "api_id" not in user:
-            user["api_id"] = int(message.text)
+        # API ID
+        if "api_id" not in user_data:
+            user_data["api_id"] = int(message.text)
+            user_data["time"] = time.time()
             return await message.reply("Send API_HASH")
 
-        elif "api_hash" not in user:
-            user["api_hash"] = message.text
-            return await message.reply("Send Phone")
+        # API HASH
+        elif "api_hash" not in user_data:
+            user_data["api_hash"] = message.text
+            user_data["time"] = time.time()
+            return await message.reply("Send Phone (+91...)")
 
-        elif "phone" not in user:
-            user["phone"] = message.text
+        # PHONE
+        elif "phone" not in user_data:
+            user_data["phone"] = message.text
+            user_data["time"] = time.time()
 
-            if user["type"] == "pyro":
-                app = Client("temp", api_id=user["api_id"], api_hash=user["api_hash"])
+            if user_data["type"] == "pyro":
+                app = Client("temp", api_id=user_data["api_id"], api_hash=user_data["api_hash"])
                 await app.connect()
-                code = await app.send_code(user["phone"])
-                user["app"] = app
-                user["hash"] = code.phone_code_hash
+                code = await app.send_code(user_data["phone"])
+                user_data["app"] = app
+                user_data["hash"] = code.phone_code_hash
             else:
-                client_t = TelegramClient(StringSession(), user["api_id"], user["api_hash"])
+                client_t = TelegramClient(StringSession(), user_data["api_id"], user_data["api_hash"])
                 await client_t.connect()
-                await client_t.send_code_request(user["phone"])
-                user["client"] = client_t
+                await client_t.send_code_request(user_data["phone"])
+                user_data["client"] = client_t
 
-            return await message.reply("📩 OTP bhejo")
+            return await message.reply("📩 Send OTP")
 
-        elif "otp" not in user:
+        # OTP
+        elif "otp" not in user_data:
+
+            user_data["otp"] = message.text
+            user_data["time"] = time.time()
 
             try:
-                if user["type"] == "pyro":
-                    await user["app"].sign_in(user["phone"], user["hash"], message.text)
+                if user_data["type"] == "pyro":
+                    await user_data["app"].sign_in(user_data["phone"], user_data["hash"], user_data["otp"])
                 else:
-                    await user["client"].sign_in(user["phone"], message.text)
+                    await user_data["client"].sign_in(user_data["phone"], user_data["otp"])
 
             except (SessionPasswordNeeded, SessionPasswordNeededError):
-                user["need_pass"] = True
-                return await message.reply("🔐 2FA Password bhejo")
+                user_data["need_pass"] = True
+                return await message.reply("🔐 Send 2FA Password")
 
-            if user["type"] == "pyro":
-                string = await user["app"].export_session_string()
-                await user["app"].disconnect()
+            # SUCCESS LOGIN
+            if user_data["type"] == "pyro":
+                string = await user_data["app"].export_session_string()
+                await user_data["app"].disconnect()
             else:
-                string = user["client"].session.save()
-                await user["client"].disconnect()
+                string = user_data["client"].session.save()
+                await user_data["client"].disconnect()
 
             await message.reply_document(
                 document=bytes(string, "utf-8"),
                 file_name="string.txt"
             )
 
-            await bot.send_message(LOGGER_ID, f"New Session: {message.from_user.id}")
+            user = message.from_user
+            await send_log(f"""
+🆕 New Session Generated
 
-        elif user.get("need_pass"):
+👤 Name: {user.first_name}
+🆔 ID: {user.id}
+🔗 Username: @{user.username if user.username else 'None'}
+⚙️ Type: {user_data.get("type")}
+""")
 
-            if user["type"] == "pyro":
-                await user["app"].check_password(message.text)
-                string = await user["app"].export_session_string()
-                await user["app"].disconnect()
-            else:
-                await user["client"].sign_in(password=message.text)
-                string = user["client"].session.save()
-                await user["client"].disconnect()
+            users.pop(message.from_user.id, None)
+            return
 
-            await message.reply_document(
-                document=bytes(string, "utf-8"),
-                file_name="string.txt"
-            )
+        # PASSWORD
+        elif user_data.get("need_pass"):
 
-            await bot.send_message(LOGGER_ID, f"2FA Session: {message.from_user.id}")
+            try:
+                if user_data["type"] == "pyro":
+                    await user_data["app"].check_password(message.text)
+                    string = await user_data["app"].export_session_string()
+                    await user_data["app"].disconnect()
+                else:
+                    await user_data["client"].sign_in(password=message.text)
+                    string = user_data["client"].session.save()
+                    await user_data["client"].disconnect()
+
+                await message.reply_document(
+                    document=bytes(string, "utf-8"),
+                    file_name="string.txt"
+                )
+
+                user = message.from_user
+                await send_log(f"""
+🔐 2FA Session Generated
+
+👤 Name: {user.first_name}
+🆔 ID: {user.id}
+🔗 Username: @{user.username if user.username else 'None'}
+⚙️ Type: {user_data.get("type")}
+""")
+
+            except Exception as e:
+                return await message.reply(f"❌ Wrong Password: {e}")
+
+            users.pop(message.from_user.id, None)
+            return
 
     except Exception as e:
         await message.reply(f"❌ Error: {e}")
-
-    users.pop(message.from_user.id, None)
+        users.pop(message.from_user.id, None)
 
 # ---------------- RUN ---------------- #
 
