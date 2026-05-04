@@ -2,41 +2,35 @@ import os
 import asyncio
 import time
 from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.errors import SessionPasswordNeeded
 from telethon.sessions import StringSession
 from telethon import TelegramClient
+from telethon.errors import SessionPasswordNeededError
 from motor.motor_asyncio import AsyncIOMotorClient
+
+from start import WELCOME_TEXT, start_buttons
+from help import HELP_TEXT, help_buttons
 
 # ---------------- CONFIG ---------------- #
 
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL = os.getenv("CHANNEL")
-OWNER_ID = int(os.getenv("OWNER_ID"))
+CHANNEL = "hellupdates1"   # already added
+OWNER_ID = int(os.getenv("OWNER_ID"))  # numeric id dalna
+LOGGER_ID = int(os.getenv("LOGGER_ID"))
 MONGO_URL = os.getenv("MONGO_URL")
 
-# ---------------- BOT ---------------- #
+bot = Client("string_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-bot = Client(
-    "string_bot",
-    api_id=API_ID,
-    api_hash=API_HASH,
-    bot_token=BOT_TOKEN
-)
-
-# ---------------- MONGO SAFE INIT ---------------- #
+# ---------------- DB ---------------- #
 
 users_db = None
-
 try:
     mongo = AsyncIOMotorClient(MONGO_URL)
-    db = mongo["bot"]
-    users_db = db["users"]
-except Exception as e:
-    print("❌ MongoDB Error:", e)
-
-# ---------------- USER STORAGE ---------------- #
+    users_db = mongo["bot"]["users"]
+except:
+    pass
 
 users = {}
 
@@ -54,48 +48,39 @@ async def is_joined(client, user_id):
 @bot.on_message(filters.command("start"))
 async def start(client, message):
 
-    # ❌ FIX: NO if users_db directly
     if users_db is not None:
-        try:
-            await users_db.update_one(
-                {"user_id": message.from_user.id},
-                {"$set": {"user_id": message.from_user.id}},
-                upsert=True
-            )
-        except Exception as e:
-            print("DB error:", e)
+        await users_db.update_one(
+            {"user_id": message.from_user.id},
+            {"$set": {"user_id": message.from_user.id}},
+            upsert=True
+        )
 
     if not await is_joined(client, message.from_user.id):
         return await message.reply(
             "⚠️ Join channel first",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("Join", url=f"https://t.me/{CHANNEL}")],
-                [InlineKeyboardButton("Verify", callback_data="verify")]
-            ])
+            reply_markup=start_buttons(CHANNEL)
         )
 
-    await message.reply(
-        "🔥 Choose Generator",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔥 Pyrogram", callback_data="pyro")],
-            [InlineKeyboardButton("⚡ Telethon", callback_data="tele")]
-        ])
-    )
+    await message.reply(WELCOME_TEXT, reply_markup=start_buttons(CHANNEL))
+
+# ---------------- HELP ---------------- #
+
+@bot.on_callback_query(filters.regex("help"))
+async def help_menu(client, cb):
+    await cb.message.edit(HELP_TEXT, reply_markup=help_buttons())
+
+@bot.on_callback_query(filters.regex("back"))
+async def back_menu(client, cb):
+    await cb.message.edit(WELCOME_TEXT, reply_markup=start_buttons(CHANNEL))
 
 # ---------------- VERIFY ---------------- #
 
 @bot.on_callback_query(filters.regex("verify"))
 async def verify(client, cb):
     if await is_joined(client, cb.from_user.id):
-        await cb.message.edit(
-            "✅ Verified!",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔥 Pyrogram", callback_data="pyro")],
-                [InlineKeyboardButton("⚡ Telethon", callback_data="tele")]
-            ])
-        )
+        await cb.answer("✅ Verified!", show_alert=True)
     else:
-        await cb.answer("❌ Join nahi kiya!", show_alert=True)
+        await cb.answer("❌ Join channel first", show_alert=True)
 
 # ---------------- SELECT ---------------- #
 
@@ -105,14 +90,21 @@ async def choose(client, cb):
         "type": cb.data,
         "time": time.time()
     }
-    await cb.message.edit("📥 Send API_ID\n\n/cancel to stop")
+    await cb.message.edit("📥 Send API_ID")
 
-# ---------------- CANCEL ---------------- #
+# ---------------- BROADCAST ---------------- #
 
-@bot.on_message(filters.command("cancel"))
-async def cancel(client, message):
-    users.pop(message.from_user.id, None)
-    await message.reply("❌ Cancelled")
+@bot.on_message(filters.command("broadcast") & filters.user(OWNER_ID))
+async def broadcast(client, message):
+    msg = message.text.split(None, 1)[1]
+
+    async for user in users_db.find():
+        try:
+            await bot.send_message(user["user_id"], msg)
+        except:
+            pass
+
+    await message.reply("✅ Broadcast Done")
 
 # ---------------- HANDLER ---------------- #
 
@@ -125,7 +117,7 @@ async def handler(client, message):
 
     if time.time() - user["time"] > 120:
         users.pop(message.from_user.id)
-        return await message.reply("⌛ Session expired")
+        return await message.reply("⌛ Timeout")
 
     try:
 
@@ -135,7 +127,7 @@ async def handler(client, message):
 
         elif "api_hash" not in user:
             user["api_hash"] = message.text
-            return await message.reply("Send Phone (+91...)")
+            return await message.reply("Send Phone")
 
         elif "phone" not in user:
             user["phone"] = message.text
@@ -146,7 +138,6 @@ async def handler(client, message):
                 code = await app.send_code(user["phone"])
                 user["app"] = app
                 user["hash"] = code.phone_code_hash
-
             else:
                 client_t = TelegramClient(StringSession(), user["api_id"], user["api_hash"])
                 await client_t.connect()
@@ -157,32 +148,47 @@ async def handler(client, message):
 
         elif "otp" not in user:
 
-            string = ""
+            try:
+                if user["type"] == "pyro":
+                    await user["app"].sign_in(user["phone"], user["hash"], message.text)
+                else:
+                    await user["client"].sign_in(user["phone"], message.text)
+
+            except (SessionPasswordNeeded, SessionPasswordNeededError):
+                user["need_pass"] = True
+                return await message.reply("🔐 2FA Password bhejo")
 
             if user["type"] == "pyro":
-                await user["app"].sign_in(user["phone"], user["hash"], message.text)
                 string = await user["app"].export_session_string()
                 await user["app"].disconnect()
-
             else:
-                await user["client"].sign_in(user["phone"], message.text)
                 string = user["client"].session.save()
                 await user["client"].disconnect()
 
-            file_name = f"{message.from_user.id}.txt"
-
-            with open(file_name, "w") as f:
-                f.write(string)
-
-            msg = await message.reply_document(file_name)
-
-            await asyncio.sleep(60)
-            await msg.delete()
-
-            await bot.send_message(
-                OWNER_ID,
-                f"🆕 New Session\nUser: {message.from_user.id}\nType: {user['type']}"
+            await message.reply_document(
+                document=bytes(string, "utf-8"),
+                file_name="string.txt"
             )
+
+            await bot.send_message(LOGGER_ID, f"New Session: {message.from_user.id}")
+
+        elif user.get("need_pass"):
+
+            if user["type"] == "pyro":
+                await user["app"].check_password(message.text)
+                string = await user["app"].export_session_string()
+                await user["app"].disconnect()
+            else:
+                await user["client"].sign_in(password=message.text)
+                string = user["client"].session.save()
+                await user["client"].disconnect()
+
+            await message.reply_document(
+                document=bytes(string, "utf-8"),
+                file_name="string.txt"
+            )
+
+            await bot.send_message(LOGGER_ID, f"2FA Session: {message.from_user.id}")
 
     except Exception as e:
         await message.reply(f"❌ Error: {e}")
