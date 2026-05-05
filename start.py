@@ -25,17 +25,17 @@ WELCOME_TEXT = """
 def start_buttons(channel):
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("👑 𝕆𝕨𝕟𝕖𝕣", url="https://t.me/Brucerich12"),
-            InlineKeyboardButton("📢 ℂ𝕙𝕒𝕟𝕟𝕖𝕝", url=f"https://t.me/{channel}")
+            InlineKeyboardButton("💫 𝕆𝕨𝕟𝕖𝕣", url="https://t.me/Brucerich12"),
+            InlineKeyboardButton("🫆 ℂ𝕙𝕒𝕟𝕟𝕖𝕝", url=f"https://t.me/{channel}")
         ],
         [
-            InlineKeyboardButton("✅ 𝕍𝕖𝕣𝕚𝕗𝕪", callback_data="verify")
+            InlineKeyboardButton("🤝 𝕍𝕖𝕣𝕚𝕗𝕪", callback_data="verify")
         ],
         [
-            InlineKeyboardButton("⚡ 𝕋𝕖𝕝𝕖𝕥𝕙𝕠𝕟", callback_data="tele"),
+            InlineKeyboardButton("🍂 𝕋𝕖𝕝𝕖𝕥𝕙𝕠𝕟", callback_data="tele"),
             InlineKeyboardButton("🔥 ℙ𝕪𝕣𝕠𝕘𝕣𝕒𝕞", callback_data="pyro")
         ],
         [
-            InlineKeyboardButton("❓ ℍ𝕖𝕝𝕡", callback_data="help")
+            InlineKeyboardButton("🕸️ ℍ𝕖𝕝𝕡", callback_data="help")
         ]
     ])
