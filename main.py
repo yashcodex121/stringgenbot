@@ -28,11 +28,13 @@ bot = Client("string_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN
 # ---------------- DB ---------------- #
 
 users_db = None
+
 try:
     mongo = AsyncIOMotorClient(os.getenv("MONGO_URL"))
     users_db = mongo["bot"]["users"]
-except:
-    print("Mongo not connected")
+    print("✅ Mongo Connected")
+except Exception as e:
+    print("❌ Mongo Error:", e)
 
 users = {}
 
@@ -53,16 +55,16 @@ async def start(client, message):
 
     users[uid] = {"mode": None, "step": "choose", "time": time.time()}
 
-    # DB SAVE USER
-    if users_db:
+    # 🔥 SAFE MONGO CHECK (IMPORTANT FIX)
+    if users_db is not None:
         try:
             await users_db.update_one(
                 {"user_id": uid},
                 {"$set": {"user_id": uid}},
                 upsert=True
             )
-        except:
-            pass
+        except Exception as e:
+            print("DB ERROR:", e)
 
     await send_log(f"🚀 START\nID: {uid}")
 
@@ -120,7 +122,8 @@ async def handler(client, message):
 @bot.on_message(filters.command("broadcast") & filters.user(OWNER_ID))
 async def broadcast(client, message):
 
-    if not users_db:
+    # 🔥 SAFE CHECK FIX (IMPORTANT)
+    if users_db is None:
         return await message.reply("❌ DB not connected")
 
     users_list = await users_db.find().to_list(length=10000)
@@ -166,7 +169,7 @@ async def broadcast(client, message):
 """)
 
     await message.reply(f"""
-✔ Done
+✔ DONE
 
 ✅ {success}
 ❌ {failed}
@@ -174,5 +177,5 @@ async def broadcast(client, message):
 
 # ---------------- RUN ---------------- #
 
-print("🚀 Bot Started")
+print("🚀 Bot Started Successfully")
 bot.run()
