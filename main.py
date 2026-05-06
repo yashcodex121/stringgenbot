@@ -40,7 +40,6 @@ bot = Client(
 # ---------------- DB ---------------- #
 
 users_db = None
-
 try:
     mongo = AsyncIOMotorClient(os.getenv("MONGO_URL"))
     users_db = mongo["bot"]["users"]
@@ -54,7 +53,7 @@ users = {}
 
 # ---------------- START ---------------- #
 
-@bot.on_message(filters.command("start"))
+@bot.on_message(filters.command("start") & filters.private)
 async def start_handler(client, message):
     try:
         uid = message.from_user.id
@@ -65,7 +64,6 @@ async def start_handler(client, message):
             "time": time.time()
         }
 
-        # Save user
         if users_db:
             await users_db.update_one(
                 {"user_id": uid},
@@ -115,9 +113,13 @@ async def callback_handler(client, cb):
 
 # ---------------- MAIN HANDLER ---------------- #
 
-@bot.on_message(filters.private & filters.text)
+@bot.on_message(filters.private & filters.text & ~filters.command(["start", "broadcast"]))
 async def message_handler(client, message):
     try:
+        # extra safety
+        if message.text.startswith("/"):
+            return
+
         uid = message.from_user.id
         data = users.get(uid)
 
@@ -158,7 +160,7 @@ async def startup():
         init_logger(bot, LOGGER_ID)
         print("✅ Logger Initialized")
     except Exception:
-        print("Logger Init Failed")
+        print("❌ Logger Init Failed")
 
 # ---------------- RUN ---------------- #
 
