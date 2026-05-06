@@ -17,15 +17,6 @@ def set_logger_chat(chat_id):
         LOGGER_CHAT = None
 
 
-def format_user(user):
-    name = user.first_name or "None"
-    uid = user.id
-    username = f"@{user.username}" if user.username else "No Username"
-    mention = f"<a href='tg://user?id={uid}'>Profile</a>"
-
-    return name, uid, username, mention
-
-
 async def auto_log(text: str):
     try:
         if BOT is None or LOGGER_CHAT is None:
@@ -42,7 +33,7 @@ async def auto_log(text: str):
         await BOT.send_message(
             chat_id=LOGGER_CHAT,
             text=msg,
-            parse_mode="HTML",
+            parse_mode="html",   # ✅ FIXED (lowercase)
             disable_web_page_preview=True
         )
 
