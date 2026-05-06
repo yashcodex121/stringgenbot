@@ -1,7 +1,7 @@
 import os
 import time
-import asyncio
-from pyrogram import Client, filters
+import traceback
+from pyrogram import Client, filters, idle
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from start import WELCOME_TEXT, start_buttons
@@ -10,7 +10,6 @@ from help import HELP_TEXT, help_buttons
 from pyrogram_module import handle_pyro
 from telethon_module import handle_tele
 
-# 🔥 MODULES
 from logger import init_logger, send_log
 from broadcast import run_broadcast
 
@@ -44,8 +43,7 @@ users_db = None
 
 try:
     mongo = AsyncIOMotorClient(os.getenv("MONGO_URL"))
-    db = mongo["bot"]
-    users_db = db["users"]
+    users_db = mongo["bot"]["users"]
     print("✅ Mongo Connected")
 except Exception as e:
     print("❌ Mongo Error:", e)
@@ -57,113 +55,118 @@ users = {}
 # ---------------- START ---------------- #
 
 @bot.on_message(filters.command("start"))
-async def start(client, message):
+async def start_handler(client, message):
+    try:
+        uid = message.from_user.id
 
-    uid = message.from_user.id
+        users[uid] = {
+            "mode": None,
+            "step": "choose",
+            "time": time.time()
+        }
 
-    users[uid] = {
-        "mode": None,
-        "step": "choose",
-        "time": time.time()
-    }
-
-    # SAVE USER
-    if users_db:
-        try:
+        # Save user
+        if users_db:
             await users_db.update_one(
                 {"user_id": uid},
                 {"$set": {"user_id": uid}},
                 upsert=True
             )
-        except Exception as e:
-            print("DB ERROR:", e)
 
-    await send_log(f"🚀 NEW USER\nID: {uid}")
+        await send_log(f"🚀 NEW USER: {uid}")
 
-    await message.reply(
-        WELCOME_TEXT,
-        reply_markup=start_buttons(CHANNEL)
-    )
-
-# ---------------- CALLBACK ---------------- #
-
-@bot.on_callback_query()
-async def cb(client, cb):
-
-    uid = cb.from_user.id
-
-    if cb.data == "pyro":
-        users[uid] = {"mode": "pyro", "step": "api_id", "time": time.time()}
-        return await cb.message.edit("🍂 Send API_ID (Pyrogram)")
-
-    elif cb.data == "tele":
-        users[uid] = {"mode": "tele", "step": "api_id", "time": time.time()}
-        return await cb.message.edit("🍂 Send API_ID (Telethon)")
-
-    elif cb.data == "help":
-        return await cb.message.edit(HELP_TEXT, reply_markup=help_buttons())
-
-    elif cb.data == "back":
-        return await cb.message.edit(
+        await message.reply(
             WELCOME_TEXT,
             reply_markup=start_buttons(CHANNEL)
         )
 
-    elif cb.data == "verify":
-        return await cb.answer("❌ Join channel first", show_alert=True)
+    except Exception:
+        await send_log(f"❌ START ERROR\n{traceback.format_exc()}")
+
+# ---------------- CALLBACK ---------------- #
+
+@bot.on_callback_query()
+async def callback_handler(client, cb):
+    try:
+        uid = cb.from_user.id
+
+        if cb.data == "pyro":
+            users[uid] = {"mode": "pyro", "step": "api_id", "time": time.time()}
+            return await cb.message.edit("🍂 Send API_ID (Pyrogram)")
+
+        elif cb.data == "tele":
+            users[uid] = {"mode": "tele", "step": "api_id", "time": time.time()}
+            return await cb.message.edit("🍂 Send API_ID (Telethon)")
+
+        elif cb.data == "help":
+            return await cb.message.edit(HELP_TEXT, reply_markup=help_buttons())
+
+        elif cb.data == "back":
+            return await cb.message.edit(
+                WELCOME_TEXT,
+                reply_markup=start_buttons(CHANNEL)
+            )
+
+        elif cb.data == "verify":
+            return await cb.answer("❌ Join channel first", show_alert=True)
+
+    except Exception:
+        await send_log(f"❌ CALLBACK ERROR\n{traceback.format_exc()}")
 
 # ---------------- MAIN HANDLER ---------------- #
 
 @bot.on_message(filters.private & filters.text)
-async def handler(client, message):
-
-    uid = message.from_user.id
-    data = users.get(uid)
-
-    if not data:
-        return
-
+async def message_handler(client, message):
     try:
+        uid = message.from_user.id
+        data = users.get(uid)
+
+        if not data:
+            return
+
         if data.get("mode") == "pyro":
             await handle_pyro(client, message, data, users, send_log, bot)
 
         elif data.get("mode") == "tele":
             await handle_tele(client, message, data, users, send_log, bot)
 
-    except Exception as e:
-        await send_log(f"❌ Handler Error:\n{e}")
+    except Exception:
+        await send_log(f"❌ HANDLER ERROR\n{traceback.format_exc()}")
 
 # ---------------- BROADCAST ---------------- #
 
 @bot.on_message(filters.command("broadcast") & filters.user(OWNER_ID))
 async def broadcast_handler(client, message):
+    try:
+        if not users_db:
+            return await message.reply("❌ DB not connected")
 
-    if not users_db:
-        return await message.reply("❌ DB not connected")
+        if not message.reply_to_message:
+            return await message.reply("❌ Reply to a message")
 
-    if not message.reply_to_message:
-        return await message.reply("❌ Reply to a message to broadcast")
+        await message.reply("📢 Broadcasting started...")
 
-    await message.reply("📢 Broadcasting started...")
+        await run_broadcast(bot, users_db, message, OWNER_ID)
 
-    await run_broadcast(bot, users_db, message, OWNER_ID)
+    except Exception:
+        await send_log(f"❌ BROADCAST ERROR\n{traceback.format_exc()}")
 
 # ---------------- LOGGER INIT ---------------- #
 
 async def startup():
-    await init_logger(bot, LOGGER_ID)
-    print("✅ Logger Initialized")
+    try:
+        init_logger(bot, LOGGER_ID)
+        print("✅ Logger Initialized")
+    except Exception:
+        print("Logger Init Failed")
 
 # ---------------- RUN ---------------- #
 
-async def main():
-    print("🚀 Bot Starting...")
-    await bot.start()
-    await startup()
-    print("✅ Bot Started Successfully")
-    await idle()
+print("🚀 Bot Starting...")
 
-from pyrogram import idle
+bot.start()
+bot.loop.run_until_complete(startup())
 
-if __name__ == "__main__":
-    asyncio.run(main())
+print("✅ Bot Started Successfully")
+
+idle()
