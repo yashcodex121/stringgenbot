@@ -1,42 +1,13 @@
-import traceback
-
-LOGGER_CHAT = None
-BOT = None
+from log import log_start, log_string, log_error
 
 
-def init_auto_logger(bot):
-    global BOT
-    BOT = bot
+async def start_log(user):
+    await log_start(user)
 
 
-def set_logger_chat(chat_id):
-    global LOGGER_CHAT
-    try:
-        LOGGER_CHAT = int(chat_id)
-    except:
-        LOGGER_CHAT = None
+async def string_log(user, typ):
+    await log_string(user, typ)
 
 
-async def auto_log(text: str):
-    try:
-        if BOT is None or LOGGER_CHAT is None:
-            print("⚠️ Logger not set")
-            return
-
-        msg = f"""
-<blockquote>
-{text}
-━━━━━━━━━━━━━━
-</blockquote>
-"""
-
-        await BOT.send_message(
-            chat_id=LOGGER_CHAT,
-            text=msg,
-            parse_mode="html",   # ✅ FIXED (lowercase)
-            disable_web_page_preview=True
-        )
-
-    except Exception as e:
-        print("❌ LOGGER ERROR:", e)
-        print(traceback.format_exc())
+async def error_log(where, err):
+    await log_error(where, err)
