@@ -75,7 +75,8 @@ async def start_handler(client, message):
 
         await message.reply(
             WELCOME_TEXT,
-            reply_markup=start_buttons(CHANNEL)
+            reply_markup=start_buttons(CHANNEL),
+            parse_mode="Markdown"   # ✅ FIXED
         )
 
     except Exception:
@@ -102,7 +103,8 @@ async def callback_handler(client, cb):
         elif cb.data == "back":
             return await cb.message.edit(
                 WELCOME_TEXT,
-                reply_markup=start_buttons(CHANNEL)
+                reply_markup=start_buttons(CHANNEL),
+                parse_mode="Markdown"
             )
 
         elif cb.data == "verify":
@@ -116,13 +118,17 @@ async def callback_handler(client, cb):
 @bot.on_message(filters.private & filters.text & ~filters.command(["start", "broadcast"]))
 async def message_handler(client, message):
     try:
-        # extra safety
-        if message.text.startswith("/"):
+        # ❗ ignore commands + reply messages (MAIN FIX)
+        if message.text.startswith("/") or message.reply_to_message:
             return
 
         uid = message.from_user.id
-        data = users.get(uid)
 
+        # ❗ ignore owner (extra safety)
+        if uid == OWNER_ID:
+            return
+
+        data = users.get(uid)
         if not data:
             return
 
