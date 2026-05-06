@@ -8,66 +8,54 @@ BOT = None
 def init_logger(bot, logger_id):
     global BOT, LOGGER_ID
     BOT = bot
-    LOGGER_ID = int(logger_id)
+
+    try:
+        LOGGER_ID = int(logger_id)
+    except:
+        LOGGER_ID = None
+        print("❌ Invalid LOGGER_ID")
 
 
-# 🔹 SAFE SEND LOG (AUTO FALLBACK)
+# 🔹 SAFE SEND LOG (QUOTE MODE)
 async def send_log(text: str):
     if not BOT or not LOGGER_ID:
         print("⚠️ Logger not initialized")
         return
 
     try:
-        # Try HTML format
+        # 👉 Telegram SAFE QUOTE (Markdown style)
+        quote_text = "\n".join([f"> {line}" for line in text.split("\n")])
+
         await BOT.send_message(
             chat_id=LOGGER_ID,
-            text=text,
-            parse_mode="HTML",
-            disable_web_page_preview=True
+            text=quote_text
         )
 
     except Exception as e:
-        print("LOGGER HTML ERROR:", e)
-
-        try:
-            # Fallback: plain text
-            await BOT.send_message(
-                chat_id=LOGGER_ID,
-                text=text
-            )
-        except Exception as e2:
-            print("LOGGER FAILED:", e2)
+        print("❌ LOGGER FAILED:", e)
 
 
 # 🔹 START LOG
 async def log_start(user):
-    try:
-        text = f"""
-🚀 <b>New User Started</b>
+    text = f"""
+🚀 New User Started
 
-👤 <b>Name:</b> {user.first_name or ""} {user.last_name or ""}
-🆔 <b>User ID:</b> <code>{user.id}</code>
-📛 <b>Username:</b> @{user.username if user.username else "No Username"}
-⏰ <b>Time:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+👤 Name: {user.first_name or ""} {user.last_name or ""}
+🆔 User ID: {user.id}
+📛 Username: @{user.username if user.username else "No Username"}
+⏰ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 """
-        await send_log(text)
-
-    except Exception as e:
-        print("START LOG ERROR:", e)
+    await send_log(text)
 
 
-# 🔹 STRING GENERATED LOG
+# 🔹 STRING LOG
 async def log_string(user):
-    try:
-        text = f"""
-🔐 <b>String Generated</b>
+    text = f"""
+🔐 String Generated
 
-👤 <b>Name:</b> {user.first_name or ""} {user.last_name or ""}
-🆔 <b>User ID:</b> <code>{user.id}</code>
-📛 <b>Username:</b> @{user.username if user.username else "No Username"}
-⏰ <b>Time:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+👤 Name: {user.first_name or ""} {user.last_name or ""}
+🆔 User ID: {user.id}
+📛 Username: @{user.username if user.username else "No Username"}
+⏰ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 """
-        await send_log(text)
-
-    except Exception as e:
-        print("STRING LOG ERROR:", e)
+    await send_log(text)
