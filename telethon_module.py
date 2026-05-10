@@ -1,24 +1,56 @@
 from telethon import TelegramClient
 from telethon.sessions import StringSession
-from telethon.errors import SessionPasswordNeededError
+from telethon.errors import (
+    SessionPasswordNeededError,
+    PhoneCodeInvalidError,
+    PhoneCodeExpiredError
+)
 
-async def handle_tele(client, message, data, users, send_log, bot):
+async def handle_tele(
+    client,
+    message,
+    data,
+    users,
+    bot
+):
 
     uid = message.from_user.id
 
     try:
 
+        # ---------------- API ID ---------------- #
+
         if data["step"] == "api_id":
-            data["api_id"] = int(message.text)
+
+            try:
+                data["api_id"] = int(message.text)
+            except:
+                return await message.reply(
+                    "Invalid API_ID\nSend numeric API_ID"
+                )
+
             data["step"] = "api_hash"
-            return await message.reply("Send API_HASH")
 
-        if data["step"] == "api_hash":
-            data["api_hash"] = message.text
+            return await message.reply(
+                "Send API_HASH"
+            )
+
+        # ---------------- API HASH ---------------- #
+
+        elif data["step"] == "api_hash":
+
+            data["api_hash"] = message.text.strip()
             data["step"] = "phone"
-            return await message.reply("Send Phone")
 
-        if data["step"] == "phone":
+            return await message.reply(
+                "Send phone number with country code\nExample: +919876543210"
+            )
+
+        # ---------------- PHONE ---------------- #
+
+        elif data["step"] == "phone":
+
+            phone = message.text.strip()
 
             tclient = TelegramClient(
                 StringSession(),
@@ -27,50 +59,92 @@ async def handle_tele(client, message, data, users, send_log, bot):
             )
 
             await tclient.connect()
-            await tclient.send_code_request(message.text)
 
-            data["phone"] = message.text
+            code = await tclient.send_code_request(phone)
+
+            data["phone"] = phone
+            data["phone_code_hash"] = code.phone_code_hash
             data["client"] = tclient
             data["step"] = "otp"
 
-            return await message.reply("Send OTP")
+            return await message.reply(
+                "Send OTP\n\nExample:\n1 2 3 4 5"
+            )
 
-        if data["step"] == "otp":
+        # ---------------- OTP ---------------- #
+
+        elif data["step"] == "otp":
+
+            otp = message.text.replace(" ", "")
 
             try:
+
                 await data["client"].sign_in(
                     phone=data["phone"],
-                    code=message.text
+                    code=otp,
+                    phone_code_hash=data["phone_code_hash"]
                 )
 
             except SessionPasswordNeededError:
+
                 data["step"] = "password"
-                return await message.reply("Send 2FA Password")
+
+                return await message.reply(
+                    "2FA Enabled\nSend Password"
+                )
+
+            except PhoneCodeInvalidError:
+
+                return await message.reply(
+                    "Invalid OTP\nSend correct OTP"
+                )
+
+            except PhoneCodeExpiredError:
+
+                users.pop(uid, None)
+
+                return await message.reply(
+                    "OTP Expired\nRestart with /start"
+                )
 
             string = data["client"].session.save()
+
             await data["client"].disconnect()
 
-            await message.reply(f"`{string}`")
+            await message.reply(
+                f"✅ Telethon String Session\n\n`{string}`"
+            )
 
-            await send_log(f"🆕 TELE SESSION\nID: {uid}")
+            users.pop(uid, None)
 
-            users.pop(uid)
             return
 
-        if data["step"] == "password":
+        # ---------------- PASSWORD ---------------- #
 
-            await data["client"].sign_in(password=message.text)
+        elif data["step"] == "password":
+
+            await data["client"].sign_in(
+                password=message.text
+            )
 
             string = data["client"].session.save()
+
             await data["client"].disconnect()
 
-            await message.reply(f"`{string}`")
+            await message.reply(
+                f"✅ Telethon String Session\n\n`{string}`"
+            )
 
-            await send_log(f"🔐 TELE 2FA\nID: {uid}")
+            users.pop(uid, None)
 
-            users.pop(uid)
             return
 
     except Exception as e:
-        await message.reply(f"❌ {e}")
+
+        print(f"TELETHON ERROR => {e}")
+
+        await message.reply(
+            f"❌ Error\n\n{e}"
+        )
+
         users.pop(uid, None)
