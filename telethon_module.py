@@ -26,13 +26,13 @@ async def handle_tele(
                 data["api_id"] = int(message.text)
             except:
                 return await message.reply(
-                    "Invalid API_ID\nSend numeric API_ID"
+                    "❌ Invalid API_ID"
                 )
 
             data["step"] = "api_hash"
 
             return await message.reply(
-                "Send API_HASH"
+                "📥 Send API_HASH"
             )
 
         # ---------------- API HASH ---------------- #
@@ -43,7 +43,7 @@ async def handle_tele(
             data["step"] = "phone"
 
             return await message.reply(
-                "Send phone number with country code\nExample: +919876543210"
+                "📱 Send phone number with country code\n\nExample:\n+919876543210"
             )
 
         # ---------------- PHONE ---------------- #
@@ -68,7 +68,7 @@ async def handle_tele(
             data["step"] = "otp"
 
             return await message.reply(
-                "Send OTP\n\nExample:\n1 2 3 4 5"
+                "📨 Send OTP\n\nExample:\n1 2 3 4 5"
             )
 
         # ---------------- OTP ---------------- #
@@ -90,13 +90,13 @@ async def handle_tele(
                 data["step"] = "password"
 
                 return await message.reply(
-                    "2FA Enabled\nSend Password"
+                    "🔐 2FA Enabled\nSend Password"
                 )
 
             except PhoneCodeInvalidError:
 
                 return await message.reply(
-                    "Invalid OTP\nSend correct OTP"
+                    "❌ Invalid OTP"
                 )
 
             except PhoneCodeExpiredError:
@@ -104,7 +104,7 @@ async def handle_tele(
                 users.pop(uid, None)
 
                 return await message.reply(
-                    "OTP Expired\nRestart with /start"
+                    "❌ OTP Expired\nRestart with /start"
                 )
 
             string = data["client"].session.save()
