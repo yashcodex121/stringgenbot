@@ -56,25 +56,41 @@ async def cb(client, cb):
 
     uid = cb.from_user.id
 
+    # -------- PYROGRAM -------- #
+
     if cb.data == "pyro":
+
         users[uid] = {
             "mode": "pyro",
-            "step": "api_id"
+            "step": "api_id",
+            "time": time.time()
         }
 
-        await cb.message.edit("Send API_ID")
+        await cb.message.edit_text(
+            "Send your API_ID"
+        )
+
+    # -------- TELETHON -------- #
 
     elif cb.data == "tele":
+
         users[uid] = {
             "mode": "tele",
-            "step": "api_id"
+            "step": "api_id",
+            "time": time.time()
         }
 
-        await cb.message.edit("Send API_ID")
+        await cb.message.edit_text(
+            "Send your API_ID"
+        )
 
-# ---------------- MESSAGE ---------------- #
+# ---------------- MESSAGE HANDLER ---------------- #
 
-@bot.on_message(filters.private & filters.text)
+@bot.on_message(
+    filters.private
+    & filters.text
+    & ~filters.command(["start", "help"])
+)
 async def msg(client, message):
 
     uid = message.from_user.id
@@ -83,22 +99,42 @@ async def msg(client, message):
     if not data:
         return
 
-    if data["mode"] == "pyro":
-        await handle_pyro(
-            client,
-            message,
-            data,
-            users,
-            bot
-        )
+    try:
 
-    elif data["mode"] == "tele":
-        await handle_tele(
-            client,
-            message,
-            data,
-            users,
-            bot
+        print(f"\nUSER => {uid}")
+        print(f"DATA => {data}")
+        print(f"TEXT => {message.text}")
+
+        # -------- PYROGRAM -------- #
+
+        if data["mode"] == "pyro":
+
+            await handle_pyro(
+                client,
+                message,
+                data,
+                users,
+                bot
+            )
+
+        # -------- TELETHON -------- #
+
+        elif data["mode"] == "tele":
+
+            await handle_tele(
+                client,
+                message,
+                data,
+                users,
+                bot
+            )
+
+    except Exception as e:
+
+        print(f"ERROR => {e}")
+
+        await message.reply(
+            f"Error:\n\n{e}"
         )
 
 # ---------------- RUN ---------------- #
@@ -107,6 +143,6 @@ print("Bot Starting...")
 
 bot.start()
 
-print("Bot Running")
+print("Bot Running Successfully")
 
 idle()
