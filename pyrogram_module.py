@@ -1,5 +1,6 @@
 import asyncio
 from pyrogram import Client
+from pyrogram.enums import SentCodeType
 from pyrogram.errors import (
     SessionPasswordNeeded,
     PhoneCodeInvalid,
@@ -78,6 +79,15 @@ async def handle_pyro(
                 await app.connect()
                 code = await app.send_code(phone)
 
+                # "App" type codes (delivered inside an existing logged-in
+                # Telegram session) can expire within seconds. Force a
+                # resend so Telegram falls back to SMS/call instead.
+                if code.type == SentCodeType.APP:
+                    code = await app.resend_code(
+                        phone_number=phone,
+                        phone_code_hash=code.phone_code_hash
+                    )
+
                 data["phone"] = phone
                 data["app"] = app
                 data["hash"] = code.phone_code_hash
@@ -106,7 +116,11 @@ async def handle_pyro(
                 except PhoneCodeExpired:
                     await _safe_disconnect(app)
                     users.pop(uid, None)
-                    return await message.reply("❌ OTP Expired\nRestart with /start")
+                    return await message.reply(
+                        "❌ OTP Expired\n\n"
+                        "Yeh code (Telegram app ke through mila) turant expire ho gaya.\n"
+                        "/start se dobara try karo — is baar OTP jaldi (10-15 sec ke andar) daalo."
+                    )
 
                 string = await app.export_session_string()
                 await _safe_disconnect(app)
