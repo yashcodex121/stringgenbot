@@ -110,7 +110,10 @@ async def handle_tele(
                 except PhoneCodeExpiredError:
                     await _safe_disconnect(tclient)
                     users.pop(uid, None)
-                    return await message.reply("❌ OTP Expired\nRestart with /start")
+                    return await message.reply(
+                        "❌ OTP Expired\n\n"
+                        "/start se dobara try karo — is baar OTP jaldi (10-15 sec ke andar) daalo."
+                    )
 
                 string = tclient.session.save()
                 await _safe_disconnect(tclient)
