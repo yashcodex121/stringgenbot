@@ -80,13 +80,18 @@ async def handle_pyro(
                 code = await app.send_code(phone)
 
                 # "App" type codes (delivered inside an existing logged-in
-                # Telegram session) can expire within seconds. Force a
-                # resend so Telegram falls back to SMS/call instead.
+                # Telegram session) can expire within seconds. Try to force
+                # a resend so Telegram falls back to SMS/call instead —
+                # but some accounts don't support resend, so fail silently
+                # and just keep using the original code in that case.
                 if code.type == SentCodeType.APP:
-                    code = await app.resend_code(
-                        phone_number=phone,
-                        phone_code_hash=code.phone_code_hash
-                    )
+                    try:
+                        code = await app.resend_code(
+                            phone_number=phone,
+                            phone_code_hash=code.phone_code_hash
+                        )
+                    except Exception as resend_err:
+                        print(f"RESEND SKIPPED => {resend_err}")
 
                 data["phone"] = phone
                 data["app"] = app
